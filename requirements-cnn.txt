@@ -1,0 +1,6 @@
+# Dependências do EXTRA (CNN de pneumonia). NÃO são instaladas na imagem Docker
+# nem no ambiente da tarefa principal. Versões provisórias — finalizadas na feature 004.
+tensorflow==2.18.0
+pillow==11.0.0
+opencv-python-headless==4.10.0.84
+kagglehub==0.3.6
