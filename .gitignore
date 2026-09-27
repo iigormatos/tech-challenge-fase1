@@ -1,0 +1,10 @@
+# Modelos treinados
+models/
+*.keras
+*.pt
+
+# Ambiente Python
+.venv/
+__pycache__/
+.ipynb_checkpoints/
+.env

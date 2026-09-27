@@ -1,0 +1,9 @@
+# Dados grandes e artefatos — não entram na imagem (SC-003, Princípio VIII)
+data/pneumonia/
+models/
+
+# Ambiente e controle de versão
+.venv/
+.git/
+.ipynb_checkpoints/
+__pycache__/
