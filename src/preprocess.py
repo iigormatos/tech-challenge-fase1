@@ -9,6 +9,10 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+from sklearn.compose import ColumnTransformer
+from sklearn.impute import SimpleImputer
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import FunctionTransformer, OneHotEncoder, StandardScaler
 
 #: Nome da variável alvo.
 TARGET: str = "Outcome"
@@ -90,3 +94,96 @@ def criar_faixas_clinicas(df: pd.DataFrame) -> pd.DataFrame:
         resultado["BMI"], bins=_BINS_IMC, labels=_LABELS_IMC, right=False
     )
     return resultado
+
+
+# ---------------------------------------------------------------------------
+# Pipeline de modelagem (sem alterar as funções acima)
+# ---------------------------------------------------------------------------
+
+#: Cenários de variáveis comparados na modelagem (colunas após ``preparar_dados``).
+CENARIOS: dict[str, dict[str, list[str]]] = {
+    "completo": {
+        "num": list(COLUNAS_NUMERICAS),
+        "cat": list(COLUNAS_CATEGORICAS),
+    },
+    "sem_insulin_skin": {
+        "num": [c for c in COLUNAS_NUMERICAS if c not in ("Insulin", "SkinThickness")],
+        "cat": list(COLUNAS_CATEGORICAS),
+    },
+}
+
+
+def preparar_dados(df: pd.DataFrame) -> pd.DataFrame:
+    """Aplica as transformações determinísticas da feature 002.
+
+    Encadeia :func:`marcar_zeros_como_ausentes` e :func:`criar_faixas_clinicas`.
+    Determinística, sem estatística aprendida; usada dentro do pipeline via
+    ``FunctionTransformer`` para que o modelo final receba dados brutos.
+
+    Args:
+        df: DataFrame de entrada (não é modificado).
+
+    Returns:
+        Cópia com zeros impossíveis como ``NaN`` e as faixas clínicas criadas.
+    """
+    return criar_faixas_clinicas(marcar_zeros_como_ausentes(df))
+
+
+def build_preprocessor(num_cols: list[str], cat_cols: list[str]) -> ColumnTransformer:
+    """Monta o ``ColumnTransformer`` de pré-processamento (sem ``fit``).
+
+    Numéricas: imputação por mediana + escalonamento. Categóricas: imputação pela
+    moda + one-hot (ignora categorias não vistas). Colunas fora das listas são
+    descartadas.
+
+    Args:
+        num_cols: colunas numéricas a escalonar.
+        cat_cols: colunas categóricas a codificar.
+
+    Returns:
+        ``ColumnTransformer`` pronto para entrar num ``Pipeline``.
+    """
+    num_pipe = Pipeline(
+        [
+            ("imputer", SimpleImputer(strategy="median")),
+            ("scaler", StandardScaler()),
+        ]
+    )
+    cat_pipe = Pipeline(
+        [
+            ("imputer", SimpleImputer(strategy="most_frequent")),
+            ("onehot", OneHotEncoder(handle_unknown="ignore")),
+        ]
+    )
+    return ColumnTransformer(
+        [
+            ("num", num_pipe, num_cols),
+            ("cat", cat_pipe, cat_cols),
+        ],
+        remainder="drop",
+    )
+
+
+def build_pipeline(clf, num_cols: list[str], cat_cols: list[str]) -> Pipeline:
+    """Monta o pipeline completo que recebe **dados brutos**.
+
+    Ordem: limpeza determinística (``FunctionTransformer(preparar_dados)``) →
+    pré-processamento (``build_preprocessor``) → estimador. Toda estatística
+    (imputação/escala/encoding) tem ``fit`` só no treino de cada dobra, evitando
+    vazamento (Princípio II).
+
+    Args:
+        clf: estimador do scikit-learn (classificador).
+        num_cols: colunas numéricas do cenário.
+        cat_cols: colunas categóricas do cenário.
+
+    Returns:
+        ``Pipeline`` ``[limpeza, prep, clf]``.
+    """
+    return Pipeline(
+        [
+            ("limpeza", FunctionTransformer(preparar_dados)),
+            ("prep", build_preprocessor(num_cols, cat_cols)),
+            ("clf", clf),
+        ]
+    )
